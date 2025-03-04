@@ -20,6 +20,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      
+      - name: Save environment settings file 📝
+        run: |
+          echo "Saving environment settings file from secret..."
+          echo "${{ secrets.ENV_FILE }}" > ./.env
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v3
