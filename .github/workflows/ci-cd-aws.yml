@@ -16,6 +16,10 @@ jobs:
     env:
       AWS_REGION: us-east-1
       ECR_REPOSITORY: web-app
+      TASK_DEFINITION: server-task-definition
+      SERVICE_NAME: server-service
+      CLUSTER: webCluster
+      CONTAINER_NAME: server-container
 
     steps:
       - name: Checkout Repository
@@ -45,4 +49,40 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-     
+      - name: Download and Clean Task Definition 📥
+        run: |
+          echo "📦 Downloading ECS task definition..."
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_DEFINITION }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition' > task-definition.json
+          echo "✅ Task definition downloaded!"
+
+          echo "🧹 Cleaning Task Definition..."
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .enableFaultInjection)' task-definition.json > cleaned-task-definition.json
+          mv cleaned-task-definition.json task-definition.json
+          echo "✅ Task definition cleaned!"
+
+      - name: Update Task Definition Image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:web-app-${{ github.sha }}
+
+      - name: Validate task definition 
+        run: |
+          echo "🔍 Validating task definition..."
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' task-definition.json > cleaned-task-definition.json
+          mv cleaned-task-definition.json task-definition.json
+          echo " Task definition validated !"
+
+      - name: Deploy to ECS 🚀
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.SERVICE_NAME }}
+          cluster: ${{ env.CLUSTER }}
+          wait-for-service-stability: true
+          force-new-deployment: true
